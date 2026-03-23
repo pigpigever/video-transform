@@ -3,6 +3,7 @@ import { For } from "solid-js";
 import {
   accelerationModes,
   audioOptions,
+  maxConcurrentTaskOptions,
   getContainerOptionsForPreset,
   presetOptions,
   type AccelerationMode,
@@ -19,6 +20,7 @@ interface SettingsViewProps {
   audioMode: AudioOption;
   commandPreview: string;
   container: ContainerOption;
+  maxConcurrentTasks: number;
   onPickOutputDirectory: () => void | Promise<void>;
   onResetOutputDirectory: () => void;
   outputDirectory: string | null;
@@ -26,6 +28,7 @@ interface SettingsViewProps {
   setAcceleration: (value: AccelerationMode) => void;
   setAudioMode: (value: AudioOption) => void;
   setContainer: (value: ContainerOption) => void;
+  setMaxConcurrentTasks: (value: number) => void;
   setPreset: (value: PresetOption) => void;
 }
 
@@ -104,6 +107,18 @@ export function SettingsView(props: SettingsViewProps) {
                 </AppButton>
               </div>
             </div>
+
+            <label class="grid gap-2">
+              <span class="field-label">最大并发任务</span>
+              <AppSelect
+                ariaLabel="最大并发任务数量"
+                options={maxConcurrentTaskOptions}
+                value={String(props.maxConcurrentTasks)}
+                onChange={(value) =>
+                  props.setMaxConcurrentTasks(Number.parseInt(value, 10))
+                }
+              />
+            </label>
           </div>
 
           <div class="space-y-4 rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
@@ -134,6 +149,7 @@ export function SettingsView(props: SettingsViewProps) {
                 <div>新文件加入后先停留在“进行中 / 待开始”。</div>
                 <div>默认输出目录由这里统一决定，可随时切换。</div>
                 <div>支持逐个启动，也支持顶部按钮一次性全部启动。</div>
+                <div>同时最多运行 {props.maxConcurrentTasks} 个转换任务。</div>
                 <div>完成后自动从进行中移动到已完成。</div>
               </div>
             </div>
@@ -163,6 +179,10 @@ export function SettingsView(props: SettingsViewProps) {
             <div class="summary-row">
               <span>批量触发</span>
               <strong>顶部按钮一键启动</strong>
+            </div>
+            <div class="summary-row">
+              <span>最大并发</span>
+              <strong>{props.maxConcurrentTasks} 个任务</strong>
             </div>
             <div class="summary-row">
               <span>默认输出</span>

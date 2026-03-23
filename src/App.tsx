@@ -52,20 +52,24 @@ function App() {
             </Match>
 
             <Match when={queue.sidebarSection() === "settings"}>
-              <SettingsView
-                acceleration={queue.acceleration()}
-                audioMode={queue.audioMode()}
-                commandPreview={queue.commandPreview()}
-                container={queue.container()}
-                onPickOutputDirectory={queue.handlePickOutputDirectory}
-                onResetOutputDirectory={queue.resetOutputDirectory}
-                outputDirectory={queue.outputDirectory()}
-                preset={queue.preset()}
-                setAcceleration={queue.setAcceleration}
-                setAudioMode={queue.setAudioMode}
-                setContainer={queue.setContainer}
-                setPreset={queue.setPreset}
-              />
+              <div class="view-scroll">
+                <SettingsView
+                  acceleration={queue.acceleration()}
+                  audioMode={queue.audioMode()}
+                  commandPreview={queue.commandPreview()}
+                  container={queue.container()}
+                  maxConcurrentTasks={queue.maxConcurrentTasks()}
+                  onPickOutputDirectory={queue.handlePickOutputDirectory}
+                  onResetOutputDirectory={queue.resetOutputDirectory}
+                  outputDirectory={queue.outputDirectory()}
+                  preset={queue.preset()}
+                  setAcceleration={queue.setAcceleration}
+                  setAudioMode={queue.setAudioMode}
+                  setContainer={queue.setContainer}
+                  setMaxConcurrentTasks={queue.setMaxConcurrentTasks}
+                  setPreset={queue.setPreset}
+                />
+              </div>
             </Match>
           </Switch>
         </div>

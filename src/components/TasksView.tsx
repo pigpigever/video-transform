@@ -33,7 +33,7 @@ interface TasksViewProps {
 
 export function TasksView(props: TasksViewProps) {
   return (
-    <section class="panel flex min-h-[720px] flex-col p-6">
+    <section class="panel flex h-full min-h-0 flex-col p-6">
       <div class="tasks-toolbar border-b border-white/10 pb-5">
         <div class="tasks-toolbar-heading">
           <h1 class="text-2xl font-semibold tracking-tight text-white">任务</h1>
@@ -101,7 +101,7 @@ export function TasksView(props: TasksViewProps) {
       <Tabs.Root
         value={props.taskTab}
         onChange={(value) => props.setTaskTab(value as TaskTab)}
-        class="mt-5 flex min-h-0 flex-1 flex-col"
+        class="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden"
       >
         <Tabs.List class="status-tabs w-full sm:w-fit" data-tab={props.taskTab}>
           <Tabs.Trigger class="status-tab" value="active">
@@ -114,7 +114,7 @@ export function TasksView(props: TasksViewProps) {
           </Tabs.Trigger>
         </Tabs.List>
 
-        <Tabs.Content value="active" class="mt-5 min-h-0 flex-1">
+        <Tabs.Content value="active" class="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden">
           <QueueTable
             allVisibleSelected={props.allVisibleSelected}
             jobs={props.activeJobs}
@@ -129,7 +129,7 @@ export function TasksView(props: TasksViewProps) {
           />
         </Tabs.Content>
 
-        <Tabs.Content value="completed" class="mt-5 min-h-0 flex-1">
+        <Tabs.Content value="completed" class="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden">
           <QueueTable
             allVisibleSelected={props.allVisibleSelected}
             jobs={props.completedJobs}

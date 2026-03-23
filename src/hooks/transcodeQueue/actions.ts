@@ -28,12 +28,16 @@ interface QueueActionContext {
   audioMode: Accessor<AudioOption>;
   container: Accessor<ContainerOption>;
   jobs: Accessor<TaskJob[]>;
+  maxConcurrentTasks: Accessor<number>;
   outputDirectory: Accessor<string | null>;
   pendingJobs: Accessor<TaskJob[]>;
   preset: Accessor<PresetOption>;
+  queuedTaskIds: Accessor<string[]>;
+  runningJobs: Accessor<TaskJob[]>;
   selectedJobs: Accessor<TaskJob[]>;
   setJobs: Setter<TaskJob[]>;
   setOutputDirectory: Setter<string | null>;
+  setQueuedTaskIds: Setter<string[]>;
   setSelectedTaskIds: Setter<string[]>;
   setSidebarSection: Setter<SidebarSection>;
   setTaskTab: Setter<TaskTab>;
@@ -51,6 +55,8 @@ async function probeFileSize(path: string) {
 }
 
 export function createQueueActions(context: QueueActionContext) {
+  let isPumpingStartQueue = false;
+
   function updateJobContainer(taskId: string, nextContainer: string) {
     context.updateJob(taskId, (job) => {
       if (job.status !== "pending") {
@@ -114,7 +120,7 @@ export function createQueueActions(context: QueueActionContext) {
     context.appendLog("DONE", `${completedFile} 转换完成，已归档到“已完成”列表。`);
   }
 
-  async function startJob(taskId: string) {
+  async function runJob(taskId: string) {
     const target = context.jobs().find((job) => job.id === taskId);
 
     if (!target || target.status !== "pending") {
@@ -163,36 +169,160 @@ export function createQueueActions(context: QueueActionContext) {
       }));
 
       context.appendLog("ERROR", `${target.fileName} 转换失败：${message}`);
+    } finally {
+      void pumpStartQueue();
+    }
+  }
+
+  function enqueueJobs(taskIds: string[]) {
+    const targetIdSet = new Set(taskIds);
+    const candidateTaskIds = context.jobs()
+      .filter((job) => targetIdSet.has(job.id) && job.status === "pending")
+      .map((job) => job.id);
+    let addedTaskIds: string[] = [];
+
+    if (!candidateTaskIds.length) {
+      return addedTaskIds;
+    }
+
+    context.setQueuedTaskIds((current) => {
+      const nextQueue = [...current];
+      const existingTaskIds = new Set(current);
+
+      addedTaskIds = candidateTaskIds.filter((taskId) => {
+        if (existingTaskIds.has(taskId)) {
+          return false;
+        }
+
+        existingTaskIds.add(taskId);
+        nextQueue.push(taskId);
+        return true;
+      });
+
+      return nextQueue;
+    });
+
+    void pumpStartQueue();
+
+    return addedTaskIds;
+  }
+
+  async function pumpStartQueue() {
+    if (isPumpingStartQueue) {
+      return;
+    }
+
+    isPumpingStartQueue = true;
+
+    try {
+      let availableSlots = Math.max(
+        0,
+        context.maxConcurrentTasks() - context.runningJobs().length,
+      );
+
+      if (availableSlots <= 0) {
+        return;
+      }
+
+      const nextQueue = [...context.queuedTaskIds()];
+      const nextRunningTaskIds: string[] = [];
+
+      while (availableSlots > 0 && nextQueue.length > 0) {
+        const taskId = nextQueue.shift();
+
+        if (!taskId) {
+          break;
+        }
+
+        const job = context.jobs().find((entry) => entry.id === taskId);
+
+        if (!job || job.status !== "pending") {
+          continue;
+        }
+
+        nextRunningTaskIds.push(taskId);
+        availableSlots -= 1;
+      }
+
+      context.setQueuedTaskIds(nextQueue);
+      const queuedTaskIdSet = new Set(nextQueue);
+
+      if (queuedTaskIdSet.size > 0) {
+        context.setJobs((current) =>
+          current.map((job) =>
+            queuedTaskIdSet.has(job.id) && job.status === "pending"
+              ? {
+                  ...job,
+                  eta: "队列中",
+                }
+              : job,
+          ),
+        );
+      }
+
+      nextRunningTaskIds.forEach((taskId) => {
+        void runJob(taskId);
+      });
+    } finally {
+      isPumpingStartQueue = false;
+    }
+  }
+
+  function startJob(taskId: string) {
+    const [queuedTaskId] = enqueueJobs([taskId]);
+
+    if (!queuedTaskId) {
+      return;
+    }
+
+    if (context.runningJobs().length >= context.maxConcurrentTasks()) {
+      const target = context.jobs().find((job) => job.id === queuedTaskId);
+
+      if (!target) {
+        return;
+      }
+
+      context.updateJob(queuedTaskId, (job) =>
+        job.status === "pending"
+          ? {
+              ...job,
+              eta: "队列中",
+            }
+          : job,
+      );
+      context.appendLog(
+        "QUEUE",
+        `${target.fileName} 已加入等待队列，当前最多并发 ${context.maxConcurrentTasks()} 个任务。`,
+      );
     }
   }
 
   function startSelectedJobs() {
-    const jobsToStart = context.selectedJobs().filter(
-      (job) => job.status === "pending",
+    const queuedTaskIds = enqueueJobs(
+      context.selectedJobs()
+        .filter((job) => job.status === "pending")
+        .map((job) => job.id),
     );
 
-    jobsToStart.forEach((job) => {
-      void startJob(job.id);
-    });
-
-    if (jobsToStart.length > 0) {
+    if (queuedTaskIds.length > 0) {
       context.setSelectedTaskIds([]);
       context.appendLog(
         "QUEUE",
-        `已提交 ${jobsToStart.length} 个选中任务开始转换。`,
+        `已提交 ${queuedTaskIds.length} 个选中任务，最多并发 ${context.maxConcurrentTasks()} 个。`,
       );
     }
   }
 
   function startAllJobs() {
-    const jobsToStart = context.pendingJobs();
+    const queuedTaskIds = enqueueJobs(
+      context.pendingJobs().map((job) => job.id),
+    );
 
-    jobsToStart.forEach((job) => {
-      void startJob(job.id);
-    });
-
-    if (jobsToStart.length > 0) {
-      context.appendLog("QUEUE", "全部待开始任务已提交，开始并行转换。");
+    if (queuedTaskIds.length > 0) {
+      context.appendLog(
+        "QUEUE",
+        `全部待开始任务已提交，最多并发 ${context.maxConcurrentTasks()} 个。`,
+      );
     }
   }
 
@@ -216,6 +346,9 @@ export function createQueueActions(context: QueueActionContext) {
 
     context.setJobs((current) =>
       current.filter((job) => !deletableIdSet.has(job.id)),
+    );
+    context.setQueuedTaskIds((current) =>
+      current.filter((taskId) => !deletableIdSet.has(taskId)),
     );
     context.setSelectedTaskIds((current) =>
       current.filter((taskId) => !deletableIdSet.has(taskId)),
@@ -331,7 +464,6 @@ export function createQueueActions(context: QueueActionContext) {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "无法打开输出目录。";
-      console.error('[openOutputDirector] error', error)
       context.appendLog("ERROR", `${target.fileName} 打开目录失败：${message}`);
     }
   }
@@ -342,6 +474,7 @@ export function createQueueActions(context: QueueActionContext) {
     handlePickFiles,
     handlePickOutputDirectory,
     handleRevealJob,
+    pumpStartQueue,
     resetOutputDirectory,
     startAllJobs,
     startJob,

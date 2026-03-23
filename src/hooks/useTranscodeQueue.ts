@@ -3,6 +3,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  on,
   onCleanup,
   onMount,
 } from "solid-js";
@@ -11,7 +12,7 @@ import {
   buildCommandPreview,
   estimateEta,
   getContainerOptionsForPreset,
-  initialLogs,
+  type LogEntry,
   type AccelerationMode,
   type AudioOption,
   type ContainerOption,
@@ -22,25 +23,40 @@ import {
 } from "../lib/transcode";
 import { createQueueActions } from "./transcodeQueue/actions";
 import {
-  getStoredOutputDirectory,
-  persistOutputDirectory,
+  getStoredJobs,
+  getStoredLogs,
+  getStoredTranscodeSettings,
+  persistJobs,
+  persistLogs,
+  persistTranscodeSettings,
 } from "./transcodeQueue/storage";
 
 export function useTranscodeQueue() {
+  const storedSettings = getStoredTranscodeSettings();
   const appWindow = getCurrentWindow();
   const [sidebarSection, setSidebarSection] =
     createSignal<SidebarSection>("tasks");
   const [taskTab, setTaskTab] = createSignal<TaskTab>("active");
-  const [preset, setPreset] = createSignal<PresetOption>("H.264 Delivery");
-  const [container, setContainer] = createSignal<ContainerOption>("MP4");
-  const [audioMode, setAudioMode] = createSignal<AudioOption>("AAC 192 kbps");
-  const [acceleration, setAcceleration] = createSignal<AccelerationMode>("Auto");
-  const [outputDirectory, setOutputDirectory] = createSignal<string | null>(
-    getStoredOutputDirectory(),
+  const [preset, setPreset] = createSignal<PresetOption>(storedSettings.preset);
+  const [container, setContainer] = createSignal<ContainerOption>(
+    storedSettings.container,
   );
-  const [jobs, setJobs] = createSignal<TaskJob[]>([]);
+  const [audioMode, setAudioMode] = createSignal<AudioOption>(
+    storedSettings.audioMode,
+  );
+  const [acceleration, setAcceleration] = createSignal<AccelerationMode>(
+    storedSettings.acceleration,
+  );
+  const [maxConcurrentTasks, setMaxConcurrentTasks] = createSignal<number>(
+    storedSettings.maxConcurrentTasks,
+  );
+  const [outputDirectory, setOutputDirectory] = createSignal<string | null>(
+    storedSettings.outputDirectory,
+  );
+  const [jobs, setJobs] = createSignal<TaskJob[]>(getStoredJobs());
   const [selectedTaskIds, setSelectedTaskIds] = createSignal<string[]>([]);
-  const [, setLogs] = createSignal(initialLogs);
+  const [queuedTaskIds, setQueuedTaskIds] = createSignal<string[]>([]);
+  const [logs, setLogs] = createSignal<LogEntry[]>(getStoredLogs());
 
   const pendingJobs = createMemo(() =>
     jobs().filter((job) => job.status === "pending"),
@@ -48,23 +64,31 @@ export function useTranscodeQueue() {
   const completedJobs = createMemo(() =>
     jobs().filter((job) => job.status === "completed"),
   );
+  const runningJobs = createMemo(() =>
+    jobs().filter((job) => job.status === "running"),
+  );
   const activeJobs = createMemo(() =>
     jobs().filter((job) => job.status !== "completed"),
   );
   const visibleJobs = createMemo(() =>
     taskTab() === "active" ? activeJobs() : completedJobs(),
   );
+  const queuedTaskIdSet = createMemo(() => new Set(queuedTaskIds()));
   const selectedIdSet = createMemo(() => new Set(selectedTaskIds()));
   const selectedJobs = createMemo(() =>
     visibleJobs().filter((job) => selectedIdSet().has(job.id)),
   );
 
-  const canStartAll = createMemo(() => pendingJobs().length > 0);
+  const canStartAll = createMemo(() =>
+    pendingJobs().some((job) => !queuedTaskIdSet().has(job.id)),
+  );
   const canDeleteSelected = createMemo(() =>
     selectedJobs().some((job) => job.status !== "running"),
   );
   const canStartSelected = createMemo(() =>
-    selectedJobs().some((job) => job.status === "pending"),
+    selectedJobs().some(
+      (job) => job.status === "pending" && !queuedTaskIdSet().has(job.id),
+    ),
   );
   const selectedCount = createMemo(() => selectedJobs().length);
   const selectedHasRunning = createMemo(() =>
@@ -108,12 +132,27 @@ export function useTranscodeQueue() {
   });
 
   createEffect(() => {
-    persistOutputDirectory(outputDirectory());
+    persistTranscodeSettings({
+      preset: preset(),
+      container: container(),
+      audioMode: audioMode(),
+      acceleration: acceleration(),
+      maxConcurrentTasks: maxConcurrentTasks(),
+      outputDirectory: outputDirectory(),
+    });
+  });
+
+  createEffect(() => {
+    persistJobs(jobs());
+  });
+
+  createEffect(() => {
+    persistLogs(logs());
   });
 
   function appendLog(level: string, text: string) {
     setLogs((current) =>
-      [{ time: formatClock(), level, text }, ...current].slice(0, 8),
+      [{ time: formatClock(), level, text }, ...current].slice(0, 50),
     );
   }
 
@@ -129,18 +168,32 @@ export function useTranscodeQueue() {
     audioMode,
     container,
     jobs,
+    maxConcurrentTasks,
     outputDirectory,
     pendingJobs,
     preset,
+    queuedTaskIds,
+    runningJobs,
     selectedJobs,
     setJobs,
     setOutputDirectory,
+    setQueuedTaskIds,
     setSelectedTaskIds,
     setSidebarSection,
     setTaskTab,
     updateJob,
     visibleJobs,
   });
+
+  createEffect(
+    on(
+      () => maxConcurrentTasks(),
+      () => {
+        void actions.pumpStartQueue();
+      },
+      { defer: true },
+    ),
+  );
 
   let unlistenProgress: (() => void) | undefined;
 
@@ -180,6 +233,7 @@ export function useTranscodeQueue() {
     completedJobs,
     acceleration,
     container,
+    maxConcurrentTasks,
     outputDirectory,
     preset,
     selectedCount,
@@ -192,6 +246,7 @@ export function useTranscodeQueue() {
     setAcceleration,
     setAudioMode,
     setContainer,
+    setMaxConcurrentTasks,
     setPreset,
     setSidebarSection,
     setTaskTab,

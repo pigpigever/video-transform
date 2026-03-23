@@ -10,6 +10,7 @@ import {
   Show,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   on,
   onCleanup,
@@ -21,8 +22,9 @@ import {
   type TaskStatus,
 } from "../lib/tasks";
 import { getContainerOptionsForPreset } from "../lib/transcode";
+import { getVideoThumbnail } from "../lib/videoThumbnail";
 import { AppButton } from "./AppButton";
-import { FolderOpenIcon, LoaderIcon, PlayIcon, TrashIcon } from "./AppIcons";
+import { FolderOpenIcon, PlayIcon, TrashIcon } from "./AppIcons";
 import { AppSelect } from "./AppSelect";
 
 export type TaskListView = "active" | "completed";
@@ -134,6 +136,49 @@ function TableCheckbox(props: {
   );
 }
 
+function QueueFileCell(props: { fileName: string; sourcePath: string }) {
+  const [thumbnail] = createResource(
+    () => props.sourcePath,
+    getVideoThumbnail,
+  );
+
+  const fileBadge = () =>
+    props.fileName.split(".").pop()?.slice(0, 3).toUpperCase() || "VID";
+
+  return (
+    <div class="queue-file-cell">
+      <div class="queue-file-thumbnail" aria-hidden="true">
+        <Show
+          when={thumbnail()}
+          fallback={
+            <div class="queue-file-thumbnail-fallback">
+              {thumbnail.loading ? "..." : fileBadge()}
+            </div>
+          }
+        >
+          {(thumbnailUrl) => (
+            <img
+              alt=""
+              class="queue-file-thumbnail-image"
+              loading="lazy"
+              src={thumbnailUrl()}
+            />
+          )}
+        </Show>
+      </div>
+
+      <div class="queue-file-meta">
+        <div class="queue-file-name-wrap" data-tooltip={props.fileName}>
+          <div class="queue-file-name">{props.fileName}</div>
+        </div>
+        <div class="truncate text-xs text-slate-500" title={props.sourcePath}>
+          {props.sourcePath}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function QueueTable(props: QueueTableProps) {
   const selectedIdSet = createMemo(() => new Set(props.selectedTaskIds));
 
@@ -171,14 +216,7 @@ export function QueueTable(props: QueueTableProps) {
       cell: (info) => {
         const job = info.row.original;
 
-        return (
-          <div class="queue-file-cell min-w-0">
-            <div class="truncate font-medium text-slate-100" title={job.fileName}>
-              {job.fileName}
-            </div>
-            <div class="truncate text-xs text-slate-500">{job.sourcePath}</div>
-          </div>
-        );
+        return <QueueFileCell fileName={job.fileName} sourcePath={job.sourcePath} />;
       },
     },
     {
@@ -270,7 +308,7 @@ export function QueueTable(props: QueueTableProps) {
             <div class="table-action-group">
               <AppButton size="sm" variant="table" disabled>
                 <span class="button-content">
-                  <LoaderIcon class="button-icon button-icon-spin" />
+                  <span aria-hidden="true" class="loading-spinner" />
                   <span>转换中</span>
                 </span>
               </AppButton>
@@ -332,7 +370,7 @@ export function QueueTable(props: QueueTableProps) {
     <Show
       when={table.getRowModel().rows.length > 0}
       fallback={
-        <div class="empty-state">
+        <div class="empty-state h-full">
           <div class="text-lg font-semibold text-white">
             {props.view === "active" ? "还没有进行中的任务" : "还没有已完成任务"}
           </div>
@@ -344,44 +382,46 @@ export function QueueTable(props: QueueTableProps) {
         </div>
       }
     >
-      <div class="overflow-x-auto overflow-y-hidden rounded-[24px] border border-white/10 bg-white/[0.03]">
-        <table class="queue-table">
-          <thead>
-            <For each={table.getHeaderGroups()}>
-              {(headerGroup) => (
-                <tr>
-                  <For each={headerGroup.headers}>
-                    {(header) => (
-                      <th data-column-id={header.column.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </th>
-                    )}
-                  </For>
-                </tr>
-              )}
-            </For>
-          </thead>
-          <tbody>
-            <For each={table.getRowModel().rows}>
-              {(row) => (
-                <tr>
-                  <For each={row.getVisibleCells()}>
-                    {(cell) => (
-                      <td data-column-id={cell.column.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    )}
-                  </For>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
+      <div class="queue-table-shell">
+        <div class="queue-table-scroll">
+          <table class="queue-table">
+            <thead>
+              <For each={table.getHeaderGroups()}>
+                {(headerGroup) => (
+                  <tr>
+                    <For each={headerGroup.headers}>
+                      {(header) => (
+                        <th data-column-id={header.column.id}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext(),
+                              )}
+                        </th>
+                      )}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </thead>
+            <tbody>
+              <For each={table.getRowModel().rows}>
+                {(row) => (
+                  <tr>
+                    <For each={row.getVisibleCells()}>
+                      {(cell) => (
+                        <td data-column-id={cell.column.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      )}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
       </div>
     </Show>
   );

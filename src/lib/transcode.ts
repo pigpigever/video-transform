@@ -7,6 +7,8 @@ export const presetOptions = [
 export const containerOptions = ["MP4", "MOV", "MKV", "M4V", "TS", "AVI", "MXF"] as const;
 export const audioOptions = ["AAC 192 kbps", "Copy Source", "Opus 160 kbps"] as const;
 export const accelerationModes = ["Auto", "VideoToolbox", "CPU Only"] as const;
+export const maxConcurrentTaskOptions = ["1", "2", "3", "4", "5", "6"] as const;
+export const defaultMaxConcurrentTasks = 2;
 
 export const videoExtensions = [
   "mp4",
@@ -31,7 +33,7 @@ export const initialLogs = [
     level: "UI",
     text: "任务页和设置页已经拆开，侧边栏可以在两者之间切换。",
   },
-];
+] as const satisfies readonly LogEntry[];
 
 export type PresetOption = (typeof presetOptions)[number];
 export type ContainerOption = (typeof containerOptions)[number];
@@ -39,6 +41,12 @@ export type AudioOption = (typeof audioOptions)[number];
 export type AccelerationMode = (typeof accelerationModes)[number];
 export type SidebarSection = "tasks" | "settings";
 export type TaskTab = "active" | "completed";
+
+export interface LogEntry {
+  time: string;
+  level: string;
+  text: string;
+}
 
 export interface TranscodeProgressPayload {
   taskId: string;
