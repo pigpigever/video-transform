@@ -151,9 +151,16 @@ function QueueFileCell(props: { fileName: string; sourcePath: string }) {
         <Show
           when={thumbnail()}
           fallback={
-            <div class="queue-file-thumbnail-fallback">
-              {thumbnail.loading ? "..." : fileBadge()}
-            </div>
+            <Show
+              when={thumbnail.loading}
+              fallback={
+                <div class="queue-file-thumbnail-fallback">{fileBadge()}</div>
+              }
+            >
+              <div class="queue-file-thumbnail-loading">
+                <span aria-hidden="true" class="loading-spinner" />
+              </div>
+            </Show>
           }
         >
           {(thumbnailUrl) => (

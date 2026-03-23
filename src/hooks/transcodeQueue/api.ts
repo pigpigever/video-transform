@@ -11,6 +11,10 @@ export function probeMediaInfo(path: string) {
   return invoke<ProbeMediaInfoResult>("probe_media_info", { path });
 }
 
+export function extractVideoThumbnail(path: string) {
+  return invoke<string>("extract_video_thumbnail", { path });
+}
+
 export function transcodeVideo(request: TranscodeRequest) {
   return invoke("transcode_video", { request });
 }

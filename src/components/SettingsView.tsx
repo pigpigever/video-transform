@@ -33,6 +33,23 @@ interface SettingsViewProps {
 }
 
 export function SettingsView(props: SettingsViewProps) {
+  const maxConcurrentTaskMin = Number.parseInt(maxConcurrentTaskOptions[0], 10);
+  const maxConcurrentTaskMax = Number.parseInt(
+    maxConcurrentTaskOptions[maxConcurrentTaskOptions.length - 1],
+    10,
+  );
+
+  function clampMaxConcurrentTasks(value: number) {
+    if (!Number.isFinite(value)) {
+      return props.maxConcurrentTasks;
+    }
+
+    return Math.min(
+      maxConcurrentTaskMax,
+      Math.max(maxConcurrentTaskMin, Math.round(value)),
+    );
+  }
+
   return (
     <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <section class="panel p-6">
@@ -110,13 +127,31 @@ export function SettingsView(props: SettingsViewProps) {
 
             <label class="grid gap-2">
               <span class="field-label">最大并发任务</span>
-              <AppSelect
-                ariaLabel="最大并发任务数量"
-                options={maxConcurrentTaskOptions}
-                value={String(props.maxConcurrentTasks)}
-                onChange={(value) =>
-                  props.setMaxConcurrentTasks(Number.parseInt(value, 10))
-                }
+              <input
+                aria-label="最大并发任务数量"
+                class="field-input settings-number-input"
+                inputMode="numeric"
+                max={maxConcurrentTaskMax}
+                min={maxConcurrentTaskMin}
+                step={1}
+                type="number"
+                value={props.maxConcurrentTasks}
+                onBlur={(event) => {
+                  event.currentTarget.value = String(
+                    clampMaxConcurrentTasks(
+                      Number.parseInt(event.currentTarget.value, 10),
+                    ),
+                  );
+                }}
+                onInput={(event) => {
+                  const nextValue = Number.parseInt(event.currentTarget.value, 10);
+
+                  if (Number.isNaN(nextValue)) {
+                    return;
+                  }
+
+                  props.setMaxConcurrentTasks(clampMaxConcurrentTasks(nextValue));
+                }}
               />
             </label>
           </div>

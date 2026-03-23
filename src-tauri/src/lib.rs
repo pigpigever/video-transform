@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
@@ -29,6 +30,26 @@ struct ProbeMediaInfoResult {
     file_size: u64,
 }
 
+fn build_thumbnail_args(source_path: &str, seek_seconds: f64) -> Vec<String> {
+    vec![
+        "-v".to_string(),
+        "error".to_string(),
+        "-i".to_string(),
+        source_path.to_string(),
+        "-ss".to_string(),
+        format!("{seek_seconds:.3}"),
+        "-frames:v".to_string(),
+        "1".to_string(),
+        "-vf".to_string(),
+        "scale=320:180:force_original_aspect_ratio=increase,crop=320:180".to_string(),
+        "-f".to_string(),
+        "image2pipe".to_string(),
+        "-vcodec".to_string(),
+        "mjpeg".to_string(),
+        "pipe:1".to_string(),
+    ]
+}
+
 fn probe_duration_ms(source_path: &str) -> Option<u64> {
     let output = Command::new("ffprobe")
         .args([
@@ -51,6 +72,36 @@ fn probe_duration_ms(source_path: &str) -> Option<u64> {
     let seconds = stdout.trim().parse::<f64>().ok()?;
 
     Some((seconds * 1000.0).round() as u64)
+}
+
+fn extract_video_thumbnail_blocking(source_path: String) -> Result<String, String> {
+    let duration_ms = probe_duration_ms(&source_path).unwrap_or(0);
+    let seek_seconds = if duration_ms > 800 {
+        ((duration_ms as f64) * 0.15 / 1000.0).min((duration_ms as f64 / 1000.0) - 0.12)
+    } else {
+        0.0
+    };
+    let output = Command::new("ffmpeg")
+        .args(build_thumbnail_args(&source_path, seek_seconds))
+        .output()
+        .map_err(|err| err.to_string())?;
+
+    if !output.status.success() || output.stdout.is_empty() {
+        let stderr_output = String::from_utf8_lossy(&output.stderr);
+        let message = stderr_output
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("无法生成视频缩略图。")
+            .to_string();
+
+        return Err(message);
+    }
+
+    Ok(format!(
+        "data:image/jpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(output.stdout)
+    ))
 }
 
 fn build_ffmpeg_args(request: &TranscodeRequest) -> Vec<String> {
@@ -253,6 +304,13 @@ fn probe_media_info(path: String) -> Result<ProbeMediaInfoResult, String> {
 }
 
 #[tauri::command]
+async fn extract_video_thumbnail(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || extract_video_thumbnail_blocking(path))
+        .await
+        .map_err(|err| err.to_string())?
+}
+
+#[tauri::command]
 async fn transcode_video(
     request: TranscodeRequest,
     app_handle: tauri::AppHandle,
@@ -267,7 +325,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![probe_media_info, transcode_video])
+        .invoke_handler(tauri::generate_handler![
+            probe_media_info,
+            extract_video_thumbnail,
+            transcode_video
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
